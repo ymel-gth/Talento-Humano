@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Empresa 360 - Mapa Organizacional Interactivo</title>
+  <!-- Tailwind CSS for modern UI controls and styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome for crisp vector icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- jsPDF for generating downloadable PDF reports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+      background-color: #0f172a;
+    }
+
+    #game-canvas {
+      touch-action: none;
+      background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #3b82f6;
+      border-radius: 8px;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+      50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.8); }
+    }
+    .glow-active {
+      animation: pulse-glow 2s infinite;
+    }
+
+    @keyframes float-gentle {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+    }
+    .floating-anim {
+      animation: float-gentle 3s ease-in-out infinite;
+    }
+
+    /* Responsive tweaks (phone / tablet / desktop) */
+    @media (max-width: 420px) {
+      .chip-eyebrow { display: none; }
+      .hud-chip { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+    }
+
+    #dept-sidebar {
+      transition: transform .3s cubic-bezier(.22,.9,.3,1);
+    }
+    @media (max-width: 767px) {
+      #dept-sidebar {
+        position: fixed;
+        top: 3.5rem;
+        bottom: 1.75rem;
+        right: 0;
+        height: auto;
+        width: min(85vw, 320px);
+        transform: translateX(100%);
+        box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+      }
+      #dept-sidebar.sidebar-open {
+        transform: translateX(0);
+      }
+    }
+
+    #sidebar-backdrop {
+      display: none;
+    }
+    #sidebar-backdrop.show {
+      display: block;
+    }
+
+    @supports (padding: max(0px)) {
+      #touch-controls { padding-bottom: env(safe-area-inset-bottom); }
+      footer { padding-bottom: env(safe-area-inset-bottom); }
+    }
+  </style>
+</head>
+<body class="w-screen h-screen flex flex-col text-slate-100">
+
+  <!-- Top Navigation / HUD bar -->
+  <header class="h-14 md:h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-2.5 sm:px-4 md:px-8 flex items-center justify-between z-20 shadow-lg shrink-0 gap-2">
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 shrink-0">
+        <i class="fa-solid font-bold fa-building text-sm sm:text-xl"></i>
+      </div>
+      <div class="min-w-0">
+        <h1 class="font-extrabold text-sm sm:text-base md:text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400 bg-clip-text text-transparent truncate">
+          EMPRESA 360°
+        </h1>
+        <p class="text-xs text-slate-400 font-medium hidden sm:block truncate">Mapa Interactivo de Gestión Organizacional</p>
+      </div>
+    </div>
+
+    <!-- Stats & Progress -->
+    <div class="flex items-center gap-1.5 sm:gap-3 md:gap-6 shrink-0">
+      
+      <!-- Student Badge Info -->
+      <div onclick="gameApp.openWelcomeModal(true)" class="hud-chip flex items-center gap-1.5 sm:gap-2 bg-slate-800/80 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-700/60 cursor-pointer hover:border-blue-500 transition-colors" title="Haz clic para editar tu nombre">
+        <i class="fa-solid fa-user-graduate text-blue-400 text-xs sm:text-sm"></i>
+        <div class="text-[11px] sm:text-xs min-w-0">
+          <span class="chip-eyebrow text-slate-400 block text-[10px] leading-tight font-semibold">APRENDIZ</span>
+          <span id="hud-student-name" class="font-bold text-blue-300 truncate max-w-[90px] sm:max-w-[130px] block">Sin Registrar</span>
+        </div>
+      </div>
+
+      <div class="hud-chip flex items-center gap-1.5 sm:gap-2 bg-slate-800/80 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-700/60">
+        <i class="fa-solid fa-star text-amber-400 text-xs sm:text-sm"></i>
+        <div class="text-[11px] sm:text-xs">
+          <span class="chip-eyebrow text-slate-400 block text-[10px] leading-tight font-semibold">EXPERIENCIA</span>
+          <span id="hud-xp" class="font-bold text-amber-300">0 XP</span>
+        </div>
+      </div>
+
+      <div class="hud-chip flex items-center gap-1.5 sm:gap-2 bg-slate-800/80 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-700/60">
+        <i class="fa-solid fa-trophy text-emerald-400 text-xs sm:text-sm"></i>
+        <div class="text-[11px] sm:text-xs">
+          <span class="chip-eyebrow text-slate-400 block text-[10px] leading-tight font-semibold">NIVEL CORPORATIVO</span>
+          <span id="hud-level" class="font-bold text-emerald-400">Nivel 1 - Pasante</span>
+        </div>
+      </div>
+
+      <div class="hidden lg:flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60">
+        <i class="fa-solid fa-bullseye text-indigo-400 text-sm"></i>
+        <div class="text-xs">
+          <span class="text-slate-400 block text-[10px] leading-tight font-semibold">MISIÓN ACTUAL</span>
+          <span id="hud-mission" class="font-semibold text-slate-200 truncate max-w-[180px]">Reportarte en Gerencia</span>
+        </div>
+      </div>
+
+      <!-- Sidebar toggle: only visible below the md breakpoint -->
+      <button id="btn-toggle-sidebar" onclick="gameApp.toggleSidebar()" class="md:hidden w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 flex items-center justify-center transition-all relative shrink-0">
+        <i class="fa-solid fa-sitemap text-sm"></i>
+        <span id="sidebar-toggle-badge" class="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">0</span>
+      </button>
+
+      <button id="btn-sound" onclick="gameApp.toggleAudio()" class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 flex items-center justify-center transition-all shrink-0">
+        <i id="sound-icon" class="fa-solid fa-volume-high text-sm"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="relative flex-1 w-full h-full overflow-hidden bg-slate-950 flex">
+
+    <!-- Interactive Canvas Layer -->
+    <div class="relative flex-1 h-full w-full overflow-hidden">
+      <canvas id="game-canvas" class="w-full h-full block cursor-pointer"></canvas>
+
+      <!-- On-screen directional pad for mobile/touch devices -->
+      <div id="touch-controls" class="absolute bottom-3 left-3 sm:bottom-6 sm:left-6 z-10 flex flex-col items-center gap-1 opacity-85 md:hidden">
+        <button onmousedown="gameApp.handleTouchDir('up')" ontouchstart="gameApp.handleTouchDir('up')" class="w-10 h-10 sm:w-12 sm:h-12 bg-slate-800/90 active:bg-blue-600 rounded-lg text-white font-bold text-lg sm:text-xl border border-slate-600 shadow-md flex items-center justify-center">▲</button>
+        <div class="flex gap-1">
+          <button onmousedown="gameApp.handleTouchDir('left')" ontouchstart="gameApp.handleTouchDir('left')" class="w-10 h-10 sm:w-12 sm:h-12 bg-slate-800/90 active:bg-blue-600 rounded-lg text-white font-bold text-lg sm:text-xl border border-slate-600 shadow-md flex items-center justify-center">◄</button>
+          <button onmousedown="gameApp.handleTouchDir('down')" ontouchstart="gameApp.handleTouchDir('down')" class="w-10 h-10 sm:w-12 sm:h-12 bg-slate-800/90 active:bg-blue-600 rounded-lg text-white font-bold text-lg sm:text-xl border border-slate-600 shadow-md flex items-center justify-center">▼</button>
+          <button onmousedown="gameApp.handleTouchDir('right')" ontouchstart="gameApp.handleTouchDir('right')" class="w-10 h-10 sm:w-12 sm:h-12 bg-slate-800/90 active:bg-blue-600 rounded-lg text-white font-bold text-lg sm:text-xl border border-slate-600 shadow-md flex items-center justify-center">►</button>
+        </div>
+      </div>
+
+      <!-- Instruction / Hint floating banner -->
+      <div class="absolute top-2 sm:top-4 left-1/2 -translate-x-1/2 z-10 bg-slate-900/90 backdrop-blur-md px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full border border-slate-700/80 text-[10px] sm:text-xs text-slate-300 shadow-xl flex items-center gap-2 sm:gap-3 max-w-[92vw]">
+        <span class="inline-flex items-center gap-1 font-semibold text-blue-400 whitespace-nowrap">
+          <i class="fa-solid fa-hand-pointer"></i> <span class="hidden sm:inline">Haz clic o toca un departamento</span><span class="sm:hidden">Toca un área</span>
+        </span>
+        <span class="text-slate-500 hidden sm:inline">|</span>
+        <span class="hidden md:inline text-slate-400">Usa WASD / Flechas para moverte</span>
+      </div>
+    </div>
+
+    <!-- Backdrop for mobile sidebar drawer -->
+    <div id="sidebar-backdrop" onclick="gameApp.closeSidebar()" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-20 md:hidden"></div>
+
+    <!-- Department Quick Nav Sidebar (Drawer on mobile, static column on desktop/tablet) -->
+    <aside id="dept-sidebar" class="w-72 bg-slate-900/95 md:border-l border-slate-800 h-full flex flex-col z-30 shrink-0">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center gap-2">
+          <i class="fa-solid fa-sitemap text-blue-400"></i> Áreas de la Empresa
+        </h2>
+        <div class="flex items-center gap-2">
+          <span id="dept-completion-badge" class="text-xs bg-blue-950 text-blue-300 font-semibold px-2 py-0.5 rounded-full border border-blue-800">
+            0/10 Exploradas
+          </span>
+          <button onclick="gameApp.closeSidebar()" class="md:hidden w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 flex items-center justify-center">
+            <i class="fa-solid fa-xmark text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="sidebar-dept-list" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+        <!-- Dynamic department list items inserted via JS -->
+      </div>
+
+      <div class="p-4 border-t border-slate-800 bg-slate-950/60 flex flex-col gap-2.5">
+        <div class="text-xs text-slate-400 font-semibold flex justify-between">
+          <span>Progreso de Inducción</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div id="progress-bar-fill" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full w-0 transition-all duration-500"></div>
+        </div>
+
+        <!-- Botón Generar Resultados (PDF) -->
+        <button onclick="gameApp.generatePDFResults()" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold text-xs text-white shadow-lg shadow-emerald-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-1">
+          <i class="fa-solid fa-file-pdf text-sm"></i> Generar Resultados (PDF)
+        </button>
+
+        <button onclick="gameApp.resetProgress()" class="text-[11px] text-slate-500 hover:text-slate-300 text-center underline cursor-pointer">
+          <i class="fa-solid fa-rotate-left mr-1"></i> Reiniciar Progreso
+        </button>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Modal de Registro Inicial de Aprendiz -->
+  <div id="welcome-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 transition-opacity duration-300">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 flex flex-col gap-5 text-slate-100">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white text-3xl shadow-lg shadow-blue-500/30 mx-auto">
+          <i class="fa-solid fa-id-card"></i>
+        </div>
+        <h2 class="text-xl font-extrabold text-white">Registro de Aprendiz</h2>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Ingresa tu nombre completo para personalizar tu experiencia de inducción corporativa y generar tu certificado final en PDF.
+        </p>
+      </div>
+
+      <div class="space-y-2">
+        <label for="input-student-name" class="block text-xs font-bold uppercase tracking-wider text-slate-300">
+          Nombre Completo del Aprendiz <span class="text-rose-400">*</span>
+        </label>
+        <input id="input-student-name" type="text" placeholder="Ej: María Camila Pérez" class="w-full bg-slate-950 border border-slate-700 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none transition-all" />
+        <p id="welcome-modal-error" class="text-[11px] text-rose-400 hidden font-semibold">
+          <i class="fa-solid fa-circle-exclamation mr-1"></i> Por favor ingresa un nombre válido para continuar.
+        </p>
+      </div>
+
+      <button onclick="gameApp.saveStudentName()" class="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-bold text-sm text-white shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+        <i class="fa-solid fa-play"></i> Iniciar Recorrido 360°
+      </button>
+    </div>
+  </div>
+
+  <!-- Footer: copyright notice -->
+  <footer class="h-7 bg-slate-900/95 border-t border-slate-800 flex items-center justify-center shrink-0 z-20">
+    <p class="text-[11px] text-slate-500 tracking-wide">© 2026 Yenny Melissa Rojas Racero. Todos los derechos reservados.</p>
+  </footer>
+
+  <!-- Interactive Modal Dialog for Department Exploration & Challenge Question -->
+  <div id="dept-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[94vh] sm:max-h-[90vh] transform scale-95 transition-transform duration-300" id="modal-container">
+      
+      <!-- Modal Header -->
+      <div id="modal-header" class="p-3.5 sm:p-6 bg-gradient-to-r from-blue-900/60 to-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
+          <div id="modal-icon-container" class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 text-lg sm:text-2xl shadow-inner shrink-0">
+            <i id="modal-icon" class="fa-solid fa-building"></i>
+          </div>
+          <div class="min-w-0">
+            <span id="modal-badge" class="hidden sm:inline-block text-[10px] font-bold tracking-wider uppercase bg-blue-950 text-blue-300 px-2.5 py-0.5 rounded-full border border-blue-800 mb-1">
+              Área Organizacional
+            </span>
+            <h2 id="modal-title" class="text-base sm:text-2xl font-extrabold text-white leading-tight sm:leading-none truncate">Nombre Departamento</h2>
+          </div>
+        </div>
+        <button onclick="gameApp.closeModal()" class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors shrink-0">
+          <i class="fa-solid fa-xmark text-base sm:text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-3.5 sm:p-6 overflow-y-auto space-y-3.5 sm:space-y-5 custom-scrollbar text-slate-300 flex-1">
+
+        <!-- Audio narration control -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <button id="modal-audio-btn" onclick="gameApp.toggleSpeech()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600/20 border border-blue-500/50 text-blue-300 text-xs font-bold hover:bg-blue-600/30 transition-colors">
+            <i id="modal-audio-icon" class="fa-solid fa-volume-high"></i>
+            <span id="modal-audio-label">Escuchar información</span>
+          </button>
+          <span class="text-[10px] text-slate-500">Narración por síntesis de voz</span>
+        </div>
+
+        <!-- Propósito -->
+        <div class="bg-slate-950/50 rounded-xl p-3 sm:p-4 border border-slate-800">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-blue-400 mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-compass"></i> Propósito del Departamento
+          </h3>
+          <p id="modal-description" class="text-sm leading-relaxed text-slate-300">
+            Descripción general del departamento...
+          </p>
+        </div>
+
+        <!-- Funciones principales -->
+        <div class="bg-slate-950/50 rounded-xl p-3 sm:p-4 border border-slate-800">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-list-check"></i> Funciones Principales
+          </h3>
+          <ul id="modal-funciones" class="space-y-1.5 text-sm text-slate-300 list-none"></ul>
+        </div>
+
+        <!-- Procesos que desarrolla -->
+        <div class="bg-slate-950/50 rounded-xl p-3 sm:p-4 border border-slate-800">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-diagram-project"></i> Procesos que Desarrolla
+          </h3>
+          <ul id="modal-procesos" class="space-y-1.5 text-sm text-slate-300 list-none"></ul>
+        </div>
+
+        <!-- Relación con otras dependencias -->
+        <div class="bg-slate-950/50 rounded-xl p-3 sm:p-4 border border-slate-800">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-purple-400 mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-share-nodes"></i> Relación con Otras Dependencias
+          </h3>
+          <div id="modal-relaciones" class="space-y-2 text-sm"></div>
+        </div>
+
+        <!-- Key Personnel & Roles -->
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-users"></i> Roles Clave en este Equipo
+          </h3>
+          <div id="modal-roles" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- Dynamic role cards -->
+          </div>
+        </div>
+
+        <!-- Challenge Question Section -->
+        <div class="bg-slate-800/40 rounded-xl p-3.5 sm:p-5 border border-slate-700/60">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-amber-400 flex items-center gap-2">
+              <i class="fa-solid fa-brain"></i> Pregunta Desafío
+            </h3>
+            <span class="text-xs font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded-full">+100 XP</span>
+          </div>
+
+          <p id="quiz-question" class="text-sm font-semibold text-slate-100 mb-4">
+            ¿Pregunta sobre la función organizacional?
+          </p>
+
+          <textarea id="respuesta-input" rows="3" placeholder="Escribe aquí tu respuesta reflexiva..." class="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 focus:outline-none focus:border-blue-500 resize-none"></textarea>
+
+          <div id="quiz-feedback" class="mt-4 p-3 rounded-lg text-xs font-medium hidden">
+            <!-- Feedback message -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-3 sm:p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-2">
+        <span class="text-[10px] sm:text-xs text-slate-500 hidden sm:inline truncate">Empresa 360° - Formación Profesional</span>
+        <div class="flex gap-3 ml-auto">
+          <button id="btn-submit-quiz" onclick="gameApp.guardarRespuesta()" class="px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-bold text-xs sm:text-sm text-white shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer">
+            <i class="fa-solid fa-check"></i> Guardar Respuesta
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Custom Toast Notification Box -->
+  <div id="toast-notification" class="fixed bottom-6 right-6 z-50 bg-slate-900 border border-emerald-500/50 text-white px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <div id="toast-icon" class="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg shrink-0">
+      <i class="fa-solid fa-circle-check"></i>
+    </div>
+    <div>
+      <h4 id="toast-title" class="font-bold text-sm">¡Excelente!</h4>
+      <p id="toast-msg" class="text-xs text-slate-300">Has completado el módulo correctamente.</p>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * EMPRESA 360 - Interactive Corporate Campus & Department Engine
+     * Completely single-file self-contained web application.
+     */
+
+    // Audio synthesizer helper (No external files required) — short UI feedback sounds
+    class SoundEffects {
+      constructor() {
+        this.enabled = true;
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+      }
+
+      playClick() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.05);
+          gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.05);
+        } catch(e) {}
+      }
+
+      playSuccess() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+          notes.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+            gain.gain.setValueAtTime(0.12, now + idx * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.08);
+            osc.stop(now + idx * 0.08 + 0.25);
+          });
+        } catch(e) {}
+      }
+    }
+
+    const DEPARTMENTS_DATA = [
+      {
+        id: 'gerencia',
+        name: 'Gerencia General',
+        icon: 'fa-user-tie',
+        color: '#3b82f6', // blue
+        bgGradient: ['#1e3a8a', '#1e293b'],
+        gridPos: { x: 0.5, y: 0.16 }, // normalized positions in map
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Lidera la dirección estratégica de la compañía, establece objetivos organizacionales, supervisa el cumplimiento de metas globales y toma decisiones ejecutivas clave.',
+        funciones: [
+          'Definir el direccionamiento estratégico: misión, visión y objetivos.',
+          'Tomar decisiones de alto impacto para la organización.',
+          'Representar legal y comercialmente a la empresa ante terceros.',
+          'Evaluar el desempeño global de todas las dependencias.',
+          'Aprobar políticas, presupuestos y lineamientos corporativos.'
+        ],
+        procesos: [
+          'Planeación estratégica anual.',
+          'Seguimiento a indicadores de gestión (KPI) de cada área.',
+          'Aprobación de presupuestos e inversiones.',
+          'Comunicación de lineamientos institucionales.'
+        ],
+        relaciones: [
+          { area: 'Todas las dependencias', texto: 'Define los lineamientos estratégicos que cada área ejecuta en su día a día.' },
+          { area: 'Finanzas', texto: 'Revisa y aprueba el presupuesto y los informes financieros.' },
+          { area: 'Talento Humano', texto: 'Valida la estructura orgánica y las políticas de personal.' }
+        ],
+        roles: [
+          { title: 'Director Ejecutivo (CEO)', task: 'Definir visión estratégica' },
+          { title: 'Asistente de Dirección', task: 'Gestión de agenda y gobernanza' }
+        ],
+        pregunta: '¿Es importante este departamento en esta empresa? ¿Por qué?',
+        staffCount: 3,
+        animationType: 'meeting'
+      },
+      {
+        id: 'th',
+        name: 'Talento Humano',
+        icon: 'fa-people-group',
+        color: '#10b981', // emerald
+        bgGradient: ['#065f46', '#0f172a'],
+        gridPos: { x: 0.2, y: 0.32 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Gestiona el capital humano: reclutamiento, selección, contratación, nómina, capacitación, clima laboral, evaluación del desempeño y seguridad en el trabajo.',
+        funciones: [
+          'Reclutar y seleccionar el personal idóneo para cada cargo.',
+          'Gestionar la contratación, inducción y afiliación al sistema de seguridad social.',
+          'Administrar la nómina y los programas de bienestar laboral.',
+          'Evaluar el desempeño de los colaboradores.',
+          'Planear y ejecutar programas de capacitación y desarrollo.'
+        ],
+        procesos: [
+          'Reclutamiento y selección de talento.',
+          'Contratación e ingreso de personal.',
+          'Evaluación de desempeño periódica.',
+          'Capacitación y bienestar laboral.'
+        ],
+        relaciones: [
+          { area: 'Gerencia', texto: 'Reporta indicadores de rotación, clima laboral y ejecuta las políticas definidas.' },
+          { area: 'Finanzas', texto: 'Coordina el pago de nómina, prestaciones sociales y aportes.' },
+          { area: 'Todas las dependencias', texto: 'Atiende sus necesidades de personal, inducción y formación.' }
+        ],
+        roles: [
+          { title: 'Analista de Selección', task: 'Entrevistas y atracción de talento' },
+          { title: 'Coordinador de Bienestar', task: 'Clima y desarrollo organizacional' }
+        ],
+        pregunta: '¿Cómo se relaciona el área de talento humano con los demás departamentos de la empresa?',
+        staffCount: 4,
+        animationType: 'interview'
+      },
+      {
+        id: 'finanzas',
+        name: 'Finanzas y Contabilidad',
+        icon: 'fa-calculator',
+        color: '#f59e0b', // amber
+        bgGradient: ['#78350f', '#0f172a'],
+        gridPos: { x: 0.8, y: 0.32 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Administra los recursos económicos, elabora estados financieros, controla presupuestos, realiza auditorías y garantiza la liquidez y rentabilidad de la empresa.',
+        funciones: [
+          'Elaborar y controlar el presupuesto general.',
+          'Gestionar la tesorería y el flujo de caja.',
+          'Llevar la contabilidad y generar reportes financieros.',
+          'Garantizar el cumplimiento de obligaciones tributarias.',
+          'Analizar la rentabilidad y los costos de la operación.'
+        ],
+        procesos: [
+          'Presupuestación anual y trimestral.',
+          'Contabilización de operaciones diarias.',
+          'Pagos, recaudos y conciliaciones bancarias.',
+          'Cierre financiero mensual y anual.'
+        ],
+        relaciones: [
+          { area: 'Gerencia', texto: 'Entrega informes financieros para la toma de decisiones.' },
+          { area: 'Talento Humano', texto: 'Procesa el pago de nómina y prestaciones.' },
+          { area: 'Compras', texto: 'Autoriza y ejecuta los pagos a proveedores.' },
+          { area: 'Ventas', texto: 'Controla el recaudo de la cartera de clientes.' }
+        ],
+        roles: [
+          { title: 'Director Financiero (CFO)', task: 'Planificación de inversiones' },
+          { title: 'Contador Senior', task: 'Estados financieros y tributación' }
+        ],
+        pregunta: '¿Qué administra Finanzas y cuál es su importancia para la liquidez de la empresa?',
+        staffCount: 3,
+        animationType: 'charts'
+      },
+      {
+        id: 'mercadeo',
+        name: 'Mercadeo (Marketing)',
+        icon: 'fa-bullhorn',
+        color: '#ec4899', // pink
+        bgGradient: ['#831843', '#0f172a'],
+        gridPos: { x: 0.18, y: 0.55 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Diseña estrategias publicitarias, investiga el mercado, posiciona la marca, gestiona redes sociales y crea campañas de comunicación atractivas.',
+        funciones: [
+          'Investigar el mercado y la competencia.',
+          'Diseñar campañas publicitarias y promocionales.',
+          'Gestionar la identidad y reputación de marca.',
+          'Definir estrategias de precio y promoción.',
+          'Analizar tendencias de consumo y comportamiento del cliente.'
+        ],
+        procesos: [
+          'Investigación de mercados.',
+          'Planeación y pauta de campañas digital/tradicional.',
+          'Gestión de marca y comunicación corporativa.',
+          'Análisis de ROI de marketing.'
+        ],
+        relaciones: [
+          { area: 'Ventas', texto: 'Entrega estrategias comerciales y clientes potenciales (leads).' },
+          { area: 'Servicio al Cliente', texto: 'Recoge percepciones de satisfacción de los clientes.' },
+          { area: 'Gerencia', texto: 'Alinea la estrategia de marca con el direccionamiento estratégico.' }
+        ],
+        roles: [
+          { title: 'Especialista en Marketing Digital', task: 'Campañas e indicadores SEO/SEM' },
+          { title: 'Diseñador Creativo', task: 'Identidad visual y piezas publicitarias' }
+        ],
+        pregunta: '¿Cuál es el propósito del departamento de Mercadeo dentro del ciclo comercial?',
+        staffCount: 4,
+        animationType: 'creative'
+      },
+      {
+        id: 'ventas',
+        name: 'Ventas y Comercial',
+        icon: 'fa-chart-line',
+        color: '#8b5cf6', // purple
+        bgGradient: ['#4c1d95', '#0f172a'],
+        gridPos: { x: 0.82, y: 0.55 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Atiende a clientes potenciales, negocia acuerdos comerciales, gestiona la fuerza de ventas, da seguimiento a metas y genera ingresos para la compañía.',
+        funciones: [
+          'Prospectar y atender clientes potenciales.',
+          'Elaborar cotizaciones y cerrar negociaciones.',
+          'Cumplir las metas comerciales establecidas.',
+          'Fidelizar a los clientes actuales.',
+          'Reportar los resultados de ventas y proyecciones.'
+        ],
+        procesos: [
+          'Prospección comercial y calificación de leads.',
+          'Presentación de propuestas, negociación y cierre.',
+          'Facturación e ingreso de órdenes.',
+          'Seguimiento postventa inicial.'
+        ],
+        relaciones: [
+          { area: 'Mercadeo', texto: 'Recibe estrategias, campañas y material promocional.' },
+          { area: 'Logística', texto: 'Coordina la entrega oportuna de los pedidos.' },
+          { area: 'Servicio al Cliente', texto: 'Transfiere los casos de atención posterior a la venta.' },
+          { area: 'Finanzas', texto: 'Reporta el estado del recaudo de cartera.' }
+        ],
+        roles: [
+          { title: 'Ejecutivo de Cuentas B2B', task: 'Cierre de contratos empresariales' },
+          { title: 'Asesor Comercial', task: 'Atención y conversión de clientes' }
+        ],
+        pregunta: '¿Qué habilidades y actividades son fundamentales para un profesional del área de Ventas?',
+        staffCount: 3,
+        animationType: 'calls'
+      },
+      {
+        id: 'compras',
+        name: 'Compras y Adquisiciones',
+        icon: 'fa-cart-shopping',
+        color: '#06b6d4', // cyan
+        bgGradient: ['#164e63', '#0f172a'],
+        gridPos: { x: 0.22, y: 0.76 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Evalúa y selecciona proveedores, negocia precios de insumos, adquiere materias primas e insumos optimizando costos y asegurando la calidad.',
+        funciones: [
+          'Buscar, evaluar y seleccionar proveedores confiables.',
+          'Negociar condiciones comerciales, precios y tiempos de entrega.',
+          'Emitir y hacer seguimiento a las órdenes de compra.',
+          'Garantizar el abastecimiento continuo de materias primas.',
+          'Verificar la calidad de los insumos recibidos.'
+        ],
+        procesos: [
+          'Licitación y evaluación de proveedores.',
+          'Cotización y negociación de suministros.',
+          'Generación de órdenes de compra.',
+          'Verificación de recepciones.'
+        ],
+        relaciones: [
+          { area: 'Producción', texto: 'Suministra las materias primas según las necesidades de fabricación.' },
+          { area: 'Finanzas', texto: 'Coordina la programación de pagos a proveedores.' },
+          { area: 'Logística', texto: 'Programa la recepción y el almacenamiento de la mercancía.' }
+        ],
+        roles: [
+          { title: 'Jefe de Compras', task: 'Negociación estratégica con proveedores' },
+          { title: 'Analista de Adquisiciones', task: 'Órdenes de compra y suministros' }
+        ],
+        pregunta: '¿Cuál es la función principal del departamento de Compras y cómo optimiza los costos?',
+        staffCount: 3,
+        animationType: 'boxes'
+      },
+      {
+        id: 'logistica',
+        name: 'Logística y Distribución',
+        icon: 'fa-truck-fast',
+        color: '#d97706', // amber-orange
+        bgGradient: ['#7c2d12', '#0f172a'],
+        gridPos: { x: 0.42, y: 0.76 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Gestiona la cadena de suministro, almacena productos en bodega, controla inventarios y organiza el transporte eficiente hacia el cliente final.',
+        funciones: [
+          'Gestionar el almacenamiento en bodega e inventarios.',
+          'Planear rutas y medios de transporte eficientes.',
+          'Coordinar el despacho de mercancía hacia clientes.',
+          'Optimizar tiempos de entrega y costos logísticos.',
+          'Gestionar devoluciones y novedades de envío.'
+        ],
+        procesos: [
+          'Recepción y control de inventarios.',
+          'Alistamiento y empaque de pedidos (picking/packing).',
+          'Despacho y transporte de carga.',
+          'Gestión de logística inversa.'
+        ],
+        relaciones: [
+          { area: 'Producción', texto: 'Recibe el producto terminado para su inventario y custodia.' },
+          { area: 'Ventas', texto: 'Despacha los pedidos acordados con los clientes.' },
+          { area: 'Compras', texto: 'Recibe la materia prima ingresante a almacén.' }
+        ],
+        roles: [
+          { title: 'Coordinador Logístico', task: 'Optimización de rutas e inventario' },
+          { title: 'Supervisión de Bodega', task: 'Picking, packing y despacho' }
+        ],
+        pregunta: '¿Por qué la logística es crucial para la satisfacción del cliente final?',
+        staffCount: 4,
+        animationType: 'truck'
+      },
+      {
+        id: 'produccion',
+        name: 'Producción y Operaciones',
+        icon: 'fa-gears',
+        color: '#ef4444', // red
+        bgGradient: ['#7f1d1d', '#0f172a'],
+        gridPos: { x: 0.62, y: 0.76 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Transforma materias primas en productos o servicios finales, supervisa las líneas de ensamble, garantiza estándares de calidad y optimiza procesos operativos.',
+        funciones: [
+          'Transformar insumos en bienes o servicios terminados.',
+          'Planificar los programas diarios de producción.',
+          'Supervisar el mantenimiento de maquinaria y equipos.',
+          'Garantizar el cumplimiento de normas de calidad y seguridad.',
+          'Minimizar desperdicios y maximizar productividad.'
+        ],
+        procesos: [
+          'Planeación de la capacidad operativa.',
+          'Ensamblaje y fabricación.',
+          'Control de calidad en línea.',
+          'Mantenimiento preventivo de maquinaria.'
+        ],
+        relaciones: [
+          { area: 'Compras', texto: 'Solicita la materia prima e insumos de producción.' },
+          { area: 'Logística', texto: 'Entrega el producto terminado para distribución.' },
+          { area: 'Tecnología', texto: 'Solicita automatización y soporte técnico de planta.' }
+        ],
+        roles: [
+          { title: 'Jefe de Planta', task: 'Plan de producción y eficiencias' },
+          { title: 'Inspector de Calidad', task: 'Certificación de estándares' }
+        ],
+        pregunta: '¿Qué papel desempeña el departamento de Producción en el valor de la empresa?',
+        staffCount: 5,
+        animationType: 'factory'
+      },
+      {
+        id: 'ti',
+        name: 'Tecnología de la Información (TI)',
+        icon: 'fa-laptop-code',
+        color: '#0284c7', // sky
+        bgGradient: ['#075985', '#0f172a'],
+        gridPos: { x: 0.78, y: 0.76 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Administra la infraestructura tecnológica, redes, sistemas de información, ciberseguridad y brinda soporte técnico informático a toda la empresa.',
+        funciones: [
+          'Mantener operativa la infraestructura de red y servidores.',
+          'Desarrollar y administrar sistemas y aplicaciones del negocio.',
+          'Proteger los datos mediante políticas de ciberseguridad.',
+          'Brindar soporte técnico y mesa de ayuda a usuarios.',
+          'Implementar transformaciones tecnológicas e innovación.'
+        ],
+        procesos: [
+          'Mantenimiento de redes y servidores.',
+          'Soporte y atención de tickets de usuario.',
+          'Desarrollo y actualización de software interno.',
+          'Respaldo de información y ciberseguridad.'
+        ],
+        relaciones: [
+          { area: 'Todas las dependencias', texto: 'Garantiza la conectividad, correo, herramientas informáticas y soporte.' },
+          { area: 'Gerencia', texto: 'Implementa soluciones tecnológicas alineadas con la visión de la empresa.' },
+          { area: 'Finanzas', texto: 'Gestiona la seguridad en plataformas transaccionales.' }
+        ],
+        roles: [
+          { title: 'Líder de Infraestructura & Cloud', task: 'Servidores y ciberseguridad' },
+          { title: 'Desarrollador de Sistemas', task: 'Plataformas de gestión' }
+        ],
+        pregunta: '¿Por qué la ciberseguridad y el soporte TI son indispensables en una empresa moderna?',
+        staffCount: 3,
+        animationType: 'coding'
+      },
+      {
+        id: 'servicio',
+        name: 'Servicio al Cliente y Calidad',
+        icon: 'fa-headset',
+        color: '#14b8a6', // teal
+        bgGradient: ['#115e59', '#0f172a'],
+        gridPos: { x: 0.50, y: 0.92 },
+        locked: false,
+        completed: false,
+        respuesta: '',
+        desc: 'Atiende PQR (peticiones, quejas, reclamos), brinda soporte postventa, mide la satisfacción del cliente e impulsa el mejoramiento continuo.',
+        funciones: [
+          'Atender inquietudes, reclamaciones y felicitaciones.',
+          'Medir los niveles de satisfacción del cliente (NPS/CSAT).',
+          'Tramitar garantías y soluciones postventa.',
+          'Proponer mejoras en productos basándose en opiniones de clientes.',
+          'Fidelizar usuarios mediante atención oportuna.'
+        ],
+        procesos: [
+          'Gestión y resolución de PQRS.',
+          'Medición de la experiencia del cliente (CX).',
+          'Auditoría de calidad en la atención.',
+          'Seguimiento a casos complejos.'
+        ],
+        relaciones: [
+          { area: 'Ventas', texto: 'Recibe casos postventa para resolución y retroalimentación.' },
+          { area: 'Logística', texto: 'Verifica estados de envío de clientes insatisfechos.' },
+          { area: 'Gerencia', texto: 'Reporta métricas de calidad y satisfacción del cliente.' }
+        ],
+        roles: [
+          { title: 'Coordinador de Experiencia de Cliente', task: 'Gestión de indicadores CX' },
+          { title: 'Agente de Soporte & PQRS', task: 'Atención directa y soluciones' }
+        ],
+        pregunta: '¿Cómo impacta el Servicio al Cliente en la reputación y fidelización corporativa?',
+        staffCount: 4,
+        animationType: 'headset'
+      }
+    ];
+
+    class CorporateGameApp {
+      constructor() {
+        this.sfx = new SoundEffects();
+        this.canvas = document.getElementById('game-canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.deptData = DEPARTMENTS_DATA;
+        
+        // Game state
+        this.studentName = '';
+        this.xp = 0;
+        this.activeDept = null;
+        this.sidebarOpen = false;
+        this.isSpeaking = false;
+        this.speechUtterance = null;
+        
+        // Player position (normalized 0..1)
+        this.player = {
+          x: 0.5,
+          y: 0.28,
+          targetX: 0.5,
+          targetY: 0.28,
+          speed: 0.008,
+          animFrame: 0,
+          walking: false,
+          angle: 0
+        };
+
+        // Particles & visual effects
+        this.particles = [];
+        this.time = 0;
+
+        this.init();
+      }
+
+      init() {
+        this.loadLocalStorage();
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
+
+        // Keyboard controls
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+        // Canvas Click / Touch direct interaction
+        this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+
+        // Check if student is registered
+        this.checkStudentRegistration();
+
+        // Build sidebar list
+        this.renderSidebarList();
+        this.updateHUD();
+
+        // Start render loop
+        requestAnimationFrame((t) => this.renderLoop(t));
+      }
+
+      loadLocalStorage() {
+        try {
+          const saved = localStorage.getItem('empresa360_data');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.studentName) this.studentName = parsed.studentName;
+            if (parsed.xp) this.xp = parsed.xp;
+            if (parsed.depts) {
+              parsed.depts.forEach(dSaved => {
+                const target = this.deptData.find(d => d.id === dSaved.id);
+                if (target) {
+                  target.completed = dSaved.completed || false;
+                  target.respuesta = dSaved.respuesta || '';
+                }
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Could not load saved progress', e);
+        }
+      }
+
+      saveLocalStorage() {
+        try {
+          const dataToSave = {
+            studentName: this.studentName,
+            xp: this.xp,
+            depts: this.deptData.map(d => ({
+              id: d.id,
+              completed: d.completed,
+              respuesta: d.respuesta
+            }))
+          };
+          localStorage.setItem('empresa360_data', JSON.stringify(dataToSave));
+        } catch (e) {
+          console.error('Could not save progress', e);
+        }
+      }
+
+      checkStudentRegistration() {
+        if (!this.studentName || this.studentName.trim() === '') {
+          this.openWelcomeModal(false);
+        } else {
+          this.closeWelcomeModal();
+        }
+      }
+
+      openWelcomeModal(isEditing = false) {
+        const modal = document.getElementById('welcome-modal');
+        const input = document.getElementById('input-student-name');
+        const err = document.getElementById('welcome-modal-error');
+        
+        input.value = this.studentName || '';
+        err.classList.add('hidden');
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+      }
+
+      closeWelcomeModal() {
+        const modal = document.getElementById('welcome-modal');
+        modal.classList.add('opacity-0', 'pointer-events-none');
+      }
+
+      saveStudentName() {
+        const input = document.getElementById('input-student-name');
+        const err = document.getElementById('welcome-modal-error');
+        const val = input.value.trim();
+
+        if (val.length < 2) {
+          err.classList.remove('hidden');
+          return;
+        }
+
+        this.studentName = val;
+        this.saveLocalStorage();
+        this.updateHUD();
+        this.closeWelcomeModal();
+        this.sfx.playSuccess();
+        this.showToast('¡Bienvenido(a)!', `Aprendiz ${this.studentName} registrado(a) con éxito.`, 'fa-user-check', 'emerald');
+      }
+
+      generatePDFResults() {
+        if (!this.studentName || this.studentName.trim() === '') {
+          this.openWelcomeModal(true);
+          return;
+        }
+
+        try {
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({
+            orientation: 'p',
+            unit: 'mm',
+            format: 'a4'
+          });
+
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+          const margin = 15;
+          let y = 20;
+
+          // Document Header
+          doc.setFillColor(15, 23, 42); // slate-900
+          doc.rect(0, 0, pageWidth, 35, 'F');
+
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(16);
+          doc.text('INFORME DE INDUCCIÓN CORPORATIVA - EMPRESA 360°', pageWidth / 2, 16, { align: 'center' });
+
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(148, 163, 184); // slate-400
+          doc.text('Mapa Organizacional Interactivo de Gestión', pageWidth / 2, 23, { align: 'center' });
+
+          y = 45;
+
+          // Student Details Card
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.roundedRect(margin, y, pageWidth - (margin * 2), 24, 3, 3, 'F');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(11);
+          doc.setTextColor(30, 41, 59); // slate-800
+          doc.text(`Nombre del Aprendiz: ${this.studentName}`, margin + 5, y + 8);
+
+          const today = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+          const completedCount = this.deptData.filter(d => d.completed).length;
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(71, 85, 105);
+          doc.text(`Fecha de Emisión: ${today}`, margin + 5, y + 16);
+          doc.text(`Áreas Completadas: ${completedCount} / ${this.deptData.length} (${this.xp} XP)`, pageWidth - margin - 5, y + 16, { align: 'right' });
+
+          y += 32;
+
+          // Section Title
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(13);
+          doc.setTextColor(30, 58, 138); // blue-900
+          doc.text('RESULTADOS Y REFLEXIONES POR DEPARTAMENTO', margin, y);
+          y += 8;
+
+          doc.setLineWidth(0.5);
+          doc.setDrawColor(203, 213, 225);
+          doc.line(margin, y, pageWidth - margin, y);
+          y += 8;
+
+          // Questions and Answers List
+          this.deptData.forEach((dept, index) => {
+            // Check page height limit
+            if (y > pageHeight - 35) {
+              doc.addPage();
+              y = 20;
+            }
+
+            // Department box
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${index + 1}. ${dept.name}`, margin, y);
+            
+            // Status badge
+            doc.setFontSize(9);
+            if (dept.completed) {
+              doc.setTextColor(16, 185, 129); // emerald
+              doc.text('[Completado]', pageWidth - margin, y, { align: 'right' });
+            } else {
+              doc.setTextColor(239, 68, 68); // red
+              doc.text('[Pendiente]', pageWidth - margin, y, { align: 'right' });
+            }
+            y += 6;
+
+            // Pregunta
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9.5);
+            doc.setTextColor(71, 85, 105);
+            
+            const preguntaLines = doc.splitTextToSize(`Pregunta: ${dept.pregunta}`, pageWidth - (margin * 2) - 5);
+            doc.text(preguntaLines, margin + 3, y);
+            y += (preguntaLines.length * 4.5) + 2;
+
+            // Respuesta
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9.5);
+            
+            const respuestaText = dept.respuesta && dept.respuesta.trim() !== '' 
+              ? dept.respuesta 
+              : 'Sin respuesta registrada.';
+
+            doc.setTextColor(dept.respuesta ? 30 : 148, dept.respuesta ? 41 : 163, dept.respuesta ? 59 : 184);
+
+            const respuestaLines = doc.splitTextToSize(`Respuesta: ${respuestaText}`, pageWidth - (margin * 2) - 5);
+            doc.text(respuestaLines, margin + 3, y);
+            y += (respuestaLines.length * 4.5) + 8;
+          });
+
+          // Footer Copyright
+          const totalPages = doc.internal.getNumberOfPages();
+          for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.text(`Empresa 360° - Reporte Oficial de Inducción | Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+          }
+
+          const cleanName = this.studentName.replace(/[^a-zA-Z0-9]/g, '_');
+          doc.save(`Resultados_Induccion_${cleanName}.pdf`);
+
+          this.sfx.playSuccess();
+          this.showToast('¡PDF Generado!', 'El documento con tus resultados se ha descargado.', 'fa-file-pdf', 'emerald');
+
+        } catch (e) {
+          console.error('Error generating PDF:', e);
+          alert('No se pudo generar el PDF. Por favor verifica que el script de jsPDF se cargó correctamente.');
+        }
+      }
+
+      resetProgress() {
+        if (confirm('¿Estás seguro de que deseas reiniciar tu progreso de inducción?')) {
+          localStorage.removeItem('empresa360_data');
+          this.xp = 0;
+          this.studentName = '';
+          this.deptData.forEach(d => {
+            d.completed = false;
+            d.respuesta = '';
+          });
+          this.updateHUD();
+          this.renderSidebarList();
+          this.checkStudentRegistration();
+          this.showToast('Progreso Reiniciado', 'Has comenzado una nueva inducción.', 'fa-rotate-left', 'indigo');
+        }
+      }
+
+      resizeCanvas() {
+        const rect = this.canvas.parentElement.getBoundingClientRect();
+        this.canvas.width = rect.width;
+        this.canvas.height = rect.height;
+      }
+
+      renderLoop(timestamp) {
+        this.time = timestamp * 0.002;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+
+        // Clear canvas
+        this.ctx.clearRect(0, 0, w, h);
+
+        // Draw animated background grid
+        this.drawGrid(w, h);
+
+        // Draw connecting pathways between related departments
+        this.drawPathways(w, h);
+
+        // Update & Draw player
+        this.updatePlayer(w, h);
+
+        // Draw department pods / buildings
+        this.drawDepartments(w, h);
+
+        // Draw player character avatar
+        this.drawPlayerCharacter(w, h);
+
+        // Draw floating particles
+        this.updateAndDrawParticles(w, h);
+
+        requestAnimationFrame((t) => this.renderLoop(t));
+      }
+
+      drawGrid(w, h) {
+        this.ctx.strokeStyle = 'rgba(51, 65, 85, 0.25)';
+        this.ctx.lineWidth = 1;
+        const gridSize = Math.min(w, h) / 12;
+
+        const offsetX = (this.time * 10) % gridSize;
+        const offsetY = (this.time * 5) % gridSize;
+
+        for (let x = offsetX; x < w; x += gridSize) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(x, 0);
+          this.ctx.lineTo(x, h);
+          this.ctx.stroke();
+        }
+
+        for (let y = offsetY; y < h; y += gridSize) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(0, y);
+          this.ctx.lineTo(w, y);
+          this.ctx.stroke();
+        }
+      }
+
+      drawPathways(w, h) {
+        const gerencia = this.deptData.find(d => d.id === 'gerencia');
+        if (!gerencia) return;
+
+        const gX = gerencia.gridPos.x * w;
+        const gY = gerencia.gridPos.y * h;
+
+        this.deptData.forEach(dept => {
+          if (dept.id === 'gerencia') return;
+
+          const dX = dept.gridPos.x * w;
+          const dY = dept.gridPos.y * h;
+
+          this.ctx.beginPath();
+          this.ctx.moveTo(gX, gY);
+          this.ctx.lineTo(dX, dY);
+
+          // Animated energy line effect
+          const isDone = dept.completed;
+          this.ctx.strokeStyle = isDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(59, 130, 246, 0.25)';
+          this.ctx.lineWidth = isDone ? 3 : 2;
+          this.ctx.setLineDash([8, 8]);
+          this.ctx.lineDashOffset = -this.time * 20;
+          this.ctx.stroke();
+          this.ctx.setLineDash([]);
+        });
+      }
+
+      drawDepartments(w, h) {
+        const podRadius = Math.min(w, h) * 0.055;
+
+        this.deptData.forEach(dept => {
+          const x = dept.gridPos.x * w;
+          const y = dept.gridPos.y * h;
+
+          const isHovered = this.isPlayerNear(x, y, podRadius * 1.5);
+          const isCompleted = dept.completed;
+
+          // Outer pulsing ring
+          this.ctx.save();
+          this.ctx.beginPath();
+          const pulse = Math.sin(this.time * 3 + x) * 4;
+          this.ctx.arc(x, y, podRadius + 6 + (isHovered ? 6 : 0) + pulse, 0, Math.PI * 2);
+          this.ctx.fillStyle = isCompleted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.15)';
+          this.ctx.fill();
+
+          // Department Main Card Base
+          this.ctx.beginPath();
+          this.ctx.arc(x, y, podRadius, 0, Math.PI * 2);
+          
+          // Radial Gradient
+          const grad = this.ctx.createRadialGradient(x, y, 5, x, y, podRadius);
+          grad.addColorStop(0, dept.color);
+          grad.addColorStop(1, '#0f172a');
+          this.ctx.fillStyle = grad;
+          this.ctx.fill();
+
+          this.ctx.lineWidth = isCompleted ? 3 : 2;
+          this.ctx.strokeStyle = isCompleted ? '#10b981' : dept.color;
+          this.ctx.stroke();
+
+          // Completion checkmark badge
+          if (isCompleted) {
+            this.ctx.beginPath();
+            this.ctx.arc(x + podRadius * 0.7, y - podRadius * 0.7, 12, 0, Math.PI * 2);
+            this.ctx.fillStyle = '#10b981';
+            this.ctx.fill();
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 12px Inter, sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('✓', x + podRadius * 0.7, y - podRadius * 0.7);
+          }
+
+          // Department Name Title Banner below node
+          this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+          const textWidth = this.ctx.measureText(dept.name).width + 16;
+          this.ctx.beginPath();
+          this.ctx.roundRect(x - textWidth / 2, y + podRadius + 6, textWidth, 22, 6);
+          this.ctx.fill();
+          this.ctx.strokeStyle = dept.color;
+          this.ctx.lineWidth = 1;
+          this.ctx.stroke();
+
+          this.ctx.fillStyle = '#f8fafc';
+          this.ctx.font = 'bold 11px Inter, sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.textBaseline = 'middle';
+          this.ctx.fillText(dept.name, x, y + podRadius + 17);
+
+          // Center Icon text placeholder / indicator
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = '600 13px Inter, sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.textBaseline = 'middle';
+          const shortTag = dept.id.toUpperCase().slice(0, 3);
+          this.ctx.fillText(shortTag, x, y);
+
+          this.ctx.restore();
+        });
+      }
+
+      updatePlayer(w, h) {
+        const dx = this.player.targetX - this.player.x;
+        const dy = this.player.targetY - this.player.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 0.003) {
+          this.player.walking = true;
+          this.player.x += (dx / dist) * this.player.speed;
+          this.player.y += (dy / dist) * this.player.speed;
+          this.player.angle = Math.atan2(dy, dx);
+          this.player.animFrame += 0.2;
+
+          // Spawn movement particles
+          if (Math.random() < 0.3) {
+            this.particles.push({
+              x: this.player.x * w,
+              y: this.player.y * h + 10,
+              vx: (Math.random() - 0.5) * 0.5,
+              vy: (Math.random() - 0.5) * 0.5,
+              life: 1.0,
+              color: '#3b82f6'
+            });
+          }
+        } else {
+          this.player.walking = false;
+        }
+      }
+
+      drawPlayerCharacter(w, h) {
+        const px = this.player.x * w;
+        const py = this.player.y * h;
+
+        this.ctx.save();
+        this.ctx.translate(px, py);
+
+        // Player shadow
+        this.ctx.beginPath();
+        this.ctx.ellipse(0, 14, 12, 5, 0, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        this.ctx.fill();
+
+        // Player Outer aura glow
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 16, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(59, 130, 246, 0.3)';
+        this.ctx.fill();
+
+        // Player Avatar Body Circle
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 12, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#3b82f6';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2.5;
+        this.ctx.stroke();
+
+        // Player head / direction indicator
+        const dirX = Math.cos(this.player.angle) * 7;
+        const dirY = Math.sin(this.player.angle) * 7;
+        this.ctx.beginPath();
+        this.ctx.arc(dirX, dirY, 3.5, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fill();
+
+        // Label above character
+        this.ctx.fillStyle = '#38bdf8';
+        this.ctx.font = 'bold 10px Inter, sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('TÚ (PASANTE)', 0, -20);
+
+        this.ctx.restore();
+      }
+
+      updateAndDrawParticles(w, h) {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 0.03;
+
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+            continue;
+          }
+
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI * 2);
+          this.ctx.fillStyle = p.color;
+          this.ctx.globalAlpha = p.life;
+          this.ctx.fill();
+          this.ctx.globalAlpha = 1.0;
+        }
+      }
+
+      isPlayerNear(x, y, radius) {
+        const px = this.player.x * this.canvas.width;
+        const py = this.player.y * this.canvas.height;
+        return Math.hypot(px - x, py - y) < radius;
+      }
+
+      handleCanvasClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+
+        this.sfx.playClick();
+
+        // Check if user clicked directly on a department node
+        let clickedDept = null;
+        const podRadius = Math.min(w, h) * 0.08;
+
+        this.deptData.forEach(dept => {
+          const dX = dept.gridPos.x * w;
+          const dY = dept.gridPos.y * h;
+          if (Math.hypot(clickX - dX, clickY - dY) < podRadius) {
+            clickedDept = dept;
+          }
+        });
+
+        if (clickedDept) {
+          // Move player to target department
+          this.player.targetX = clickedDept.gridPos.x;
+          this.player.targetY = clickedDept.gridPos.y;
+
+          setTimeout(() => {
+            this.openDepartmentModal(clickedDept.id);
+          }, 350);
+        } else {
+          // Set target walking coordinates
+          this.player.targetX = clickX / w;
+          this.player.targetY = clickY / h;
+        }
+      }
+
+      handleTouchDir(dir) {
+        const step = 0.04;
+        if (dir === 'up') this.player.targetY = Math.max(0.1, this.player.targetY - step);
+        if (dir === 'down') this.player.targetY = Math.min(0.92, this.player.targetY + step);
+        if (dir === 'left') this.player.targetX = Math.max(0.1, this.player.targetX - step);
+        if (dir === 'right') this.player.targetX = Math.min(0.9, this.player.targetX + step);
+        this.sfx.playClick();
+      }
+
+      handleKeyDown(e) {
+        const key = e.key.toLowerCase();
+        const step = 0.04;
+
+        if (['w', 'arrowup'].includes(key)) {
+          this.player.targetY = Math.max(0.1, this.player.targetY - step);
+        } else if (['s', 'arrowdown'].includes(key)) {
+          this.player.targetY = Math.min(0.92, this.player.targetY + step);
+        } else if (['a', 'arrowleft'].includes(key)) {
+          this.player.targetX = Math.max(0.1, this.player.targetX - step);
+        } else if (['d', 'arrowright'].includes(key)) {
+          this.player.targetX = Math.min(0.9, this.player.targetX + step);
+        }
+      }
+
+      renderSidebarList() {
+        const container = document.getElementById('sidebar-dept-list');
+        container.innerHTML = '';
+
+        let completedCount = 0;
+
+        this.deptData.forEach(dept => {
+          if (dept.completed) completedCount++;
+
+          const item = document.createElement('div');
+          item.className = `p-2.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
+            dept.completed
+              ? 'bg-emerald-950/30 border-emerald-800/60 hover:bg-emerald-900/40'
+              : 'bg-slate-800/50 border-slate-700/60 hover:bg-slate-800'
+          }`;
+
+          item.onclick = () => {
+            this.sfx.playClick();
+            this.player.targetX = dept.gridPos.x;
+            this.player.targetY = dept.gridPos.y;
+            this.closeSidebar();
+            setTimeout(() => this.openDepartmentModal(dept.id), 300);
+          };
+
+          item.innerHTML = `
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs shrink-0" style="background-color: ${dept.color}">
+                <i class="fa-solid ${dept.icon}"></i>
+              </div>
+              <div class="min-w-0">
+                <h4 class="text-xs font-bold text-slate-200 truncate">${dept.name}</h4>
+                <p class="text-[10px] text-slate-400 truncate">${dept.completed ? '✓ Módulo explorado' : 'Pendiente por explorar'}</p>
+              </div>
+            </div>
+            <i class="fa-solid ${dept.completed ? 'fa-circle-check text-emerald-400' : 'fa-chevron-right text-slate-600'} text-xs shrink-0"></i>
+          `;
+
+          container.appendChild(item);
+        });
+
+        // Update progress counters
+        const total = this.deptData.length;
+        const percent = Math.round((completedCount / total) * 100);
+
+        document.getElementById('progress-percent').innerText = `${percent}%`;
+        document.getElementById('progress-bar-fill').style.width = `${percent}%`;
+        document.getElementById('dept-completion-badge').innerText = `${completedCount}/${total} Exploradas`;
+        document.getElementById('sidebar-toggle-badge').innerText = completedCount;
+      }
+
+      openDepartmentModal(deptId) {
+        const dept = this.deptData.find(d => d.id === deptId);
+        if (!dept) return;
+
+        this.activeDept = dept;
+
+        // Modal Icon and Header
+        const iconContainer = document.getElementById('modal-icon-container');
+        iconContainer.style.borderColor = dept.color;
+        document.getElementById('modal-icon').className = `fa-solid ${dept.icon}`;
+        document.getElementById('modal-icon').style.color = dept.color;
+        document.getElementById('modal-title').innerText = dept.name;
+
+        // Populate Description
+        document.getElementById('modal-description').innerText = dept.desc;
+
+        // Populate Funciones
+        const funcionesList = document.getElementById('modal-funciones');
+        funcionesList.innerHTML = dept.funciones.map(f => `
+          <li class="flex items-start gap-2 text-xs sm:text-sm">
+            <i class="fa-solid fa-check text-emerald-400 mt-1 shrink-0"></i>
+            <span>${f}</span>
+          </li>
+        `).join('');
+
+        // Populate Procesos
+        const procesosList = document.getElementById('modal-procesos');
+        procesosList.innerHTML = dept.procesos.map(p => `
+          <li class="flex items-start gap-2 text-xs sm:text-sm">
+            <i class="fa-solid fa-arrow-right text-amber-400 mt-1 shrink-0"></i>
+            <span>${p}</span>
+          </li>
+        `).join('');
+
+        // Populate Relaciones
+        const relacionesContainer = document.getElementById('modal-relaciones');
+        relacionesContainer.innerHTML = dept.relaciones.map(r => `
+          <div class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 flex flex-col gap-1">
+            <span class="font-bold text-xs text-purple-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-link text-[10px]"></i> ${r.area}
+            </span>
+            <p class="text-xs text-slate-300">${r.texto}</p>
+          </div>
+        `).join('');
+
+        // Populate Roles
+        const rolesContainer = document.getElementById('modal-roles');
+        rolesContainer.innerHTML = dept.roles.map(r => `
+          <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
+              <i class="fa-solid fa-user-gear"></i>
+            </div>
+            <div>
+              <h5 class="text-xs font-bold text-slate-200">${r.title}</h5>
+              <p class="text-[11px] text-slate-400">${r.task}</p>
+            </div>
+          </div>
+        `).join('');
+
+        // Populate Quiz Question
+        document.getElementById('quiz-question').innerText = dept.pregunta;
+        const input = document.getElementById('respuesta-input');
+        input.value = dept.respuesta || '';
+
+        const feedback = document.getElementById('quiz-feedback');
+        feedback.className = 'mt-4 p-3 rounded-lg text-xs font-medium hidden';
+
+        // Show Modal
+        const modal = document.getElementById('dept-modal');
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+        document.getElementById('modal-container').classList.remove('scale-95');
+
+        // Reset speech toggle button state
+        this.stopSpeech();
+      }
+
+      closeModal() {
+        this.stopSpeech();
+        const modal = document.getElementById('dept-modal');
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        document.getElementById('modal-container').classList.add('scale-95');
+        this.activeDept = null;
+      }
+
+      guardarRespuesta() {
+        if (!this.activeDept) return;
+
+        const input = document.getElementById('respuesta-input');
+        const respuestaText = input.value.trim();
+
+        const feedback = document.getElementById('quiz-feedback');
+
+        if (respuestaText.length < 5) {
+          feedback.innerText = 'Por favor escribe una respuesta reflexiva más completa para guardar tus XP.';
+          feedback.className = 'mt-4 p-3 rounded-lg text-xs font-medium bg-amber-950/80 border border-amber-700 text-amber-200 block';
+          return;
+        }
+
+        const wasCompletedBefore = this.activeDept.completed;
+        this.activeDept.respuesta = respuestaText;
+        this.activeDept.completed = true;
+
+        if (!wasCompletedBefore) {
+          this.xp += 100;
+          this.sfx.playSuccess();
+          this.showToast('¡Respuesta Guardada!', `+100 XP por explorar ${this.activeDept.name}`, 'fa-star', 'emerald');
+        } else {
+          this.sfx.playClick();
+          this.showToast('Respuesta Actualizada', 'Tu análisis ha sido actualizado correctamente.', 'fa-pen', 'blue');
+        }
+
+        feedback.innerText = '✓ ¡Respuesta registrada exitosamente en tu expediente de inducción!';
+        feedback.className = 'mt-4 p-3 rounded-lg text-xs font-medium bg-emerald-950/80 border border-emerald-700 text-emerald-200 block';
+
+        this.saveLocalStorage();
+        this.updateHUD();
+        this.renderSidebarList();
+      }
+
+      toggleSpeech() {
+        if (!this.activeDept) return;
+
+        if (this.isSpeaking) {
+          this.stopSpeech();
+        } else {
+          this.startSpeech();
+        }
+      }
+
+      startSpeech() {
+        if (!('speechSynthesis' in window)) {
+          alert('Tu navegador no soporta la síntesis de voz.');
+          return;
+        }
+
+        window.speechSynthesis.cancel();
+
+        const dept = this.activeDept;
+        const textToRead = `${dept.name}. Propósito: ${dept.desc}. Pregunta desafío: ${dept.pregunta}`;
+
+        this.speechUtterance = new SpeechSynthesisUtterance(textToRead);
+        this.speechUtterance.lang = 'es-ES';
+        this.speechUtterance.rate = 1.0;
+
+        this.speechUtterance.onend = () => {
+          this.isSpeaking = false;
+          this.updateSpeechUI();
+        };
+
+        this.speechUtterance.onerror = () => {
+          this.isSpeaking = false;
+          this.updateSpeechUI();
+        };
+
+        window.speechSynthesis.speak(this.speechUtterance);
+        this.isSpeaking = true;
+        this.updateSpeechUI();
+      }
+
+      stopSpeech() {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+        this.isSpeaking = false;
+        this.updateSpeechUI();
+      }
+
+      updateSpeechUI() {
+        const btn = document.getElementById('modal-audio-btn');
+        const icon = document.getElementById('modal-audio-icon');
+        const label = document.getElementById('modal-audio-label');
+
+        if (!btn || !icon || !label) return;
+
+        if (this.isSpeaking) {
+          btn.className = 'flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600/30 border border-amber-500/50 text-amber-300 text-xs font-bold hover:bg-amber-600/40 transition-colors';
+          icon.className = 'fa-solid fa-pause';
+          label.innerText = 'Pausar Narración';
+        } else {
+          btn.className = 'flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600/20 border border-blue-500/50 text-blue-300 text-xs font-bold hover:bg-blue-600/30 transition-colors';
+          icon.className = 'fa-solid fa-volume-high';
+          label.innerText = 'Escuchar información';
+        }
+      }
+
+      updateHUD() {
+        document.getElementById('hud-xp').innerText = `${this.xp} XP`;
+        
+        const studentBadge = document.getElementById('hud-student-name');
+        if (studentBadge) {
+          studentBadge.innerText = this.studentName || 'Sin Registrar';
+        }
+
+        let levelName = 'Nivel 1 - Pasante';
+        let mission = 'Reportarte en Gerencia';
+
+        if (this.xp >= 900) {
+          levelName = 'Nivel 5 - Director General';
+          mission = '¡Inducción 100% Completada!';
+        } else if (this.xp >= 600) {
+          levelName = 'Nivel 4 - Coordinador';
+          mission = 'Explorar áreas de operaciones';
+        } else if (this.xp >= 300) {
+          levelName = 'Nivel 3 - Analista Senior';
+          mission = 'Conocer dependencias comerciales';
+        } else if (this.xp >= 100) {
+          levelName = 'Nivel 2 - Auxiliar';
+          mission = 'Explorar áreas de soporte';
+        }
+
+        document.getElementById('hud-level').innerText = levelName;
+        document.getElementById('hud-mission').innerText = mission;
+      }
+
+      toggleSidebar() {
+        this.sidebarOpen = !this.sidebarOpen;
+        const sidebar = document.getElementById('dept-sidebar');
+        const backdrop = document.getElementById('sidebar-backdrop');
+
+        if (this.sidebarOpen) {
+          sidebar.classList.add('sidebar-open');
+          backdrop.classList.add('show');
+        } else {
+          sidebar.classList.remove('sidebar-open');
+          backdrop.classList.remove('show');
+        }
+      }
+
+      closeSidebar() {
+        this.sidebarOpen = false;
+        document.getElementById('dept-sidebar').classList.remove('sidebar-open');
+        document.getElementById('sidebar-backdrop').classList.remove('show');
+      }
+
+      toggleAudio() {
+        this.sfx.enabled = !this.sfx.enabled;
+        const icon = document.getElementById('sound-icon');
+        icon.className = this.sfx.enabled ? 'fa-solid fa-volume-high text-sm' : 'fa-solid fa-volume-xmark text-sm text-slate-500';
+      }
+
+      showToast(title, msg, iconClass = 'fa-circle-check', color = 'emerald') {
+        const toast = document.getElementById('toast-notification');
+        document.getElementById('toast-title').innerText = title;
+        document.getElementById('toast-msg').innerText = msg;
+        document.getElementById('toast-icon').innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+
+        toast.classList.remove('translate-y-20', 'opacity-0');
+        toast.classList.add('translate-y-0', 'opacity-100');
+
+        setTimeout(() => {
+          toast.classList.remove('translate-y-0', 'opacity-100');
+          toast.classList.add('translate-y-20', 'opacity-0');
+        }, 3500);
+      }
+    }
+
+    let gameApp;
+    window.addEventListener('load', () => {
+      gameApp = new CorporateGameApp();
+    });
+  </script>
+</body>
+</html>
